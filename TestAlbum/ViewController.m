@@ -18,8 +18,8 @@
 @property (nonatomic, assign) NSInteger width;
 @property (nonatomic, assign) NSInteger height;
 @property (nonatomic, assign) long long size;
-@property (nonatomic, copy) NSString *imagePath;
-@property (nonatomic, copy) NSString *videoPath;
+@property (nonatomic, copy) NSString *imagePath;  // 图片路径或视频封面路径
+@property (nonatomic, copy) NSString *videoPath;  // 视频路径
 
 @end
 
@@ -32,6 +32,7 @@
 @property (nonatomic, strong) NSArray<PHAsset *> *mediaAssets;
 @property (nonatomic, strong) PHCachingImageManager *imageManager;
 @property (nonatomic, strong) NSMutableArray<MediaInfo *> *selectedMediaList;
+@property (nonatomic, strong) UIButton *exportButton;
 
 @end
 
@@ -44,6 +45,7 @@
     self.selectedMediaList = [NSMutableArray array];
 
     [self setupCollectionView];
+    [self setupExportButton];
     [self requestPhotoLibraryAccess];
 }
 
@@ -63,6 +65,19 @@
     [self.collectionView registerClass:[UICollectionViewCell class] forCellWithReuseIdentifier:@"MediaCell"];
 
     [self.view addSubview:self.collectionView];
+}
+
+- (void)setupExportButton {
+    self.exportButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.exportButton.frame = CGRectMake(20, 200, self.view.bounds.size.width - 40, 50);
+    [self.exportButton setTitle:@"导出选中媒体" forState:UIControlStateNormal];
+    self.exportButton.backgroundColor = [UIColor systemBlueColor];
+    [self.exportButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    self.exportButton.titleLabel.font = [UIFont boldSystemFontOfSize:16];
+    self.exportButton.layer.cornerRadius = 8;
+    [self.exportButton addTarget:self action:@selector(exportButtonTapped) forControlEvents:UIControlEventTouchUpInside];
+
+    [self.view addSubview:self.exportButton];
 }
 
 - (void)requestPhotoLibraryAccess {
@@ -99,6 +114,62 @@
 }
 
 #pragma mark - Helper Methods
+
+- (void)exportButtonTapped {
+    if (self.selectedMediaList.count == 0) {
+        NSLog(@"没有选中任何媒体");
+        return;
+    }
+
+    NSLog(@"开始导出 %ld 个媒体...", (long)self.selectedMediaList.count);
+
+    [self exportSelectedMediaList:self.selectedMediaList completion:^(NSArray<MediaInfo *> *mediaList) {
+
+        NSLog(@"导出成功！共导出 %ld 个文件", (long)mediaList.count);
+        NSLog(@"========== 导出数据详情 ==========");
+
+        for (NSInteger i = 0; i < mediaList.count; i++) {
+            MediaInfo *info = mediaList[i];
+            NSLog(@"\n[%ld] 媒体信息:", (long)(i + 1));
+            NSLog(@"  类型: %@", info.isVideo ? @"视频" : @"图片");
+            NSLog(@"  Identifier: %@", info.identifier);
+            NSLog(@"  尺寸: %ldx%ld", (long)info.width, (long)info.height);
+            NSLog(@"  文件大小: %.2f MB", info.size / 1024.0 / 1024.0);
+
+            if (info.isVideo) {
+                NSLog(@"  时长: %.2f 秒", info.duration);
+                NSLog(@"  视频路径: %@", info.videoPath);
+                NSLog(@"  封面路径: %@", info.imagePath);
+            } else {
+                NSLog(@"  图片路径: %@", info.imagePath);
+            }
+        }
+
+        NSLog(@"\n========== 导出完成 ==========");
+    }];
+}
+
+// 导出图片数据到文件的辅助方法
+- (void)exportImageDataForAsset:(PHAsset *)asset
+                      toPath:(NSString *)filePath
+                 completion:(void(^)(NSString *path, NSError *error))completion {
+    PHImageRequestOptions *options = [[PHImageRequestOptions alloc] init];
+    options.deliveryMode = PHImageRequestOptionsDeliveryModeFastFormat;
+    options.networkAccessAllowed = YES;
+
+    [[PHImageManager defaultManager] requestImageDataForAsset:asset options:options resultHandler:^(NSData *imageData, NSString *dataUTI, UIImageOrientation orientation, NSDictionary *info) {
+        if (imageData) {
+            NSError *error = nil;
+            if ([imageData writeToFile:filePath options:NSDataWritingAtomic error:&error]) {
+                completion(filePath, nil);
+            } else {
+                completion(nil, error);
+            }
+        } else {
+            completion(nil, nil);
+        }
+    }];
+}
 
 - (MediaInfo *)createMediaInfoFromAsset:(PHAsset *)asset {
     MediaInfo *info = [[MediaInfo alloc] init];
@@ -226,30 +297,30 @@
     MediaInfo *existingInfo = [self findMediaInfoByIdentifier:identifier];
 
     // sendEvent到C++层
-//    if (existingInfo) {
-//        // 已选中，取消选中
-//        [self.selectedMediaList removeObject:existingInfo];
-//    } else {
-//        // 未选中，添加到选中列表
-//        MediaInfo *mediaInfo = [self createMediaInfoFromAsset:asset];
-//        [self.selectedMediaList addObject:mediaInfo];
-//    }
-//
-//    // 需要刷新的indexPath列表
-//    NSMutableArray<NSIndexPath *> *indexPathsToReload = [NSMutableArray arrayWithObject:indexPath];
-//
-//    // 如果是取消选中操作，需要刷新所有已选中的item以更新序号
-//    if (existingInfo) {
-//        for (NSInteger i = 0; i < self.mediaAssets.count; i++) {
-//            PHAsset *asset = self.mediaAssets[i];
-//            if ([self isMediaSelected:asset.localIdentifier] && i != indexPath.item) {
-//                [indexPathsToReload addObject:[NSIndexPath indexPathForItem:i inSection:0]];
-//            }
-//        }
-//    }
-//
-//    // 刷新所有需要更新的 cell
-//    [self.collectionView reloadItemsAtIndexPaths:indexPathsToReload];
+    if (existingInfo) {
+        // 已选中，取消选中
+        [self.selectedMediaList removeObject:existingInfo];
+    } else {
+        // 未选中，添加到选中列表
+        MediaInfo *mediaInfo = [self createMediaInfoFromAsset:asset];
+        [self.selectedMediaList addObject:mediaInfo];
+    }
+
+    // 需要刷新的indexPath列表
+    NSMutableArray<NSIndexPath *> *indexPathsToReload = [NSMutableArray arrayWithObject:indexPath];
+
+    // 如果是取消选中操作，需要刷新所有已选中的item以更新序号
+    if (existingInfo) {
+        for (NSInteger i = 0; i < self.mediaAssets.count; i++) {
+            PHAsset *asset = self.mediaAssets[i];
+            if ([self isMediaSelected:asset.localIdentifier] && i != indexPath.item) {
+                [indexPathsToReload addObject:[NSIndexPath indexPathForItem:i inSection:0]];
+            }
+        }
+    }
+
+    // 刷新所有需要更新的 cell
+    [self.collectionView reloadItemsAtIndexPaths:indexPathsToReload];
 }
 
 #pragma mark - Public Methods
@@ -266,11 +337,11 @@
     [self.collectionView reloadData];
 }
 
-- (void)exportSelectedMediaWithCompletion:(void(^)(NSArray<MediaInfo *> *mediaList, NSError *error))completion {
+- (void)exportSelectedMediaList:(NSMutableArray<MediaInfo *> *)selectedList completion:(void(^)(NSArray<MediaInfo *> *mediaList))completion {
     if (!completion) return;
 
-    if (self.selectedMediaList.count == 0) {
-        completion(@[], nil);
+    if (selectedList.count == 0) {
+        completion(@[]);
         return;
     }
 
@@ -286,8 +357,8 @@
     dispatch_group_t group = dispatch_group_create();
     __block NSError *exportError = nil;
 
-    for (NSInteger i = 0; i < self.selectedMediaList.count; i++) {
-        MediaInfo *mediaInfo = self.selectedMediaList[i];
+    for (NSInteger i = 0; i < selectedList.count; i++) {
+        MediaInfo *mediaInfo = selectedList[i];
 
         // 根据 identifier 找到对应的 PHAsset
         PHFetchResult<PHAsset *> *result = [PHAsset fetchAssetsWithLocalIdentifiers:@[mediaInfo.identifier] options:nil];
@@ -295,20 +366,17 @@
 
         PHAsset *asset = result.firstObject;
 
-        // 使用 identifier 生成文件名，替换特殊字符为下划线
-        NSString *safeIdentifier = [mediaInfo.identifier stringByReplacingOccurrencesOfString:@"/" withString:@"_"];
-        safeIdentifier = [safeIdentifier stringByReplacingOccurrencesOfString:@"-" withString:@"_"];
-        NSString *fileName;
+        // 使用 identifier 的 hash 值作为文件名
+        NSUInteger hashValue = [mediaInfo.identifier hash];
 
         if (mediaInfo.isVideo) {
-            // 导出视频 - 使用原视频
-            fileName = [NSString stringWithFormat:@"%@.mp4", safeIdentifier];
+            // 导出视频
+            NSString *fileName = [NSString stringWithFormat:@"%luvideo", (unsigned long)hashValue];
             NSString *filePath = [exportPath stringByAppendingPathComponent:fileName];
 
             dispatch_group_enter(group);
 
             PHVideoRequestOptions *options = [[PHVideoRequestOptions alloc] init];
-            options.version = PHVideoRequestOptionsVersionOriginal;
             options.deliveryMode = PHVideoRequestOptionsDeliveryModeFastFormat;
             options.networkAccessAllowed = YES;
 
@@ -332,36 +400,34 @@
                 }
                 dispatch_group_leave(group);
             }];
-
-        } else {
-            // 导出图片 - 使用 FastFormat
-            fileName = [NSString stringWithFormat:@"%@.jpg", safeIdentifier];
-            NSString *filePath = [exportPath stringByAppendingPathComponent:fileName];
-
-            dispatch_group_enter(group);
-
-            PHImageRequestOptions *options = [[PHImageRequestOptions alloc] init];
-            options.deliveryMode = PHImageRequestOptionsDeliveryModeFastFormat;
-            options.networkAccessAllowed = YES;
-
-            [[PHImageManager defaultManager] requestImageDataForAsset:asset options:options resultHandler:^(NSData *imageData, NSString *dataUTI, UIImageOrientation orientation, NSDictionary *info) {
-                if (imageData) {
-                    NSError *error = nil;
-                    if ([imageData writeToFile:filePath options:NSDataWritingAtomic error:&error]) {
-                        // 保存路径到 MediaInfo
-                        mediaInfo.imagePath = filePath;
-                    } else {
-                        exportError = error;
-                    }
-                }
-                dispatch_group_leave(group);
-            }];
         }
+        // 导出图片
+        NSString *fileName = [NSString stringWithFormat:@"%luimg", (unsigned long)hashValue];
+        NSString *filePath = [exportPath stringByAppendingPathComponent:fileName];
+
+        dispatch_group_enter(group);
+
+        PHImageRequestOptions *options = [[PHImageRequestOptions alloc] init];
+        options.deliveryMode = PHImageRequestOptionsDeliveryModeFastFormat;
+        options.networkAccessAllowed = YES;
+
+        [[PHImageManager defaultManager] requestImageDataForAsset:asset options:options resultHandler:^(NSData *imageData, NSString *dataUTI, UIImageOrientation orientation, NSDictionary *info) {
+            if (imageData) {
+                NSError *error = nil;
+                if ([imageData writeToFile:filePath options:NSDataWritingAtomic error:&error]) {
+                    // 保存路径到 MediaInfo
+                    mediaInfo.imagePath = filePath;
+                } else {
+                    exportError = error;
+                }
+            }
+            dispatch_group_leave(group);
+        }];
     }
 
     // 所有导出任务完成后回调
     dispatch_group_notify(group, dispatch_get_main_queue(), ^{
-        completion([self.selectedMediaList copy], exportError);
+        completion([selectedList copy]);
     });
 }
 
