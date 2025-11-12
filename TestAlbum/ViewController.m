@@ -7,6 +7,7 @@
 
 #import "ViewController.h"
 #import <Photos/Photos.h>
+#import <AVFoundation/AVFoundation.h>
 
 // 媒体信息模型
 @interface MediaInfo : NSObject
@@ -17,6 +18,8 @@
 @property (nonatomic, assign) NSInteger width;
 @property (nonatomic, assign) NSInteger height;
 @property (nonatomic, assign) long long size;
+@property (nonatomic, copy) NSString *imagePath;
+@property (nonatomic, copy) NSString *videoPath;
 
 @end
 
@@ -222,30 +225,144 @@
 
     MediaInfo *existingInfo = [self findMediaInfoByIdentifier:identifier];
 
-    if (existingInfo) {
-        // 已选中，取消选中
-        [self.selectedMediaList removeObject:existingInfo];
+    // sendEvent到C++层
+//    if (existingInfo) {
+//        // 已选中，取消选中
+//        [self.selectedMediaList removeObject:existingInfo];
+//    } else {
+//        // 未选中，添加到选中列表
+//        MediaInfo *mediaInfo = [self createMediaInfoFromAsset:asset];
+//        [self.selectedMediaList addObject:mediaInfo];
+//    }
+//
+//    // 需要刷新的indexPath列表
+//    NSMutableArray<NSIndexPath *> *indexPathsToReload = [NSMutableArray arrayWithObject:indexPath];
+//
+//    // 如果是取消选中操作，需要刷新所有已选中的item以更新序号
+//    if (existingInfo) {
+//        for (NSInteger i = 0; i < self.mediaAssets.count; i++) {
+//            PHAsset *asset = self.mediaAssets[i];
+//            if ([self isMediaSelected:asset.localIdentifier] && i != indexPath.item) {
+//                [indexPathsToReload addObject:[NSIndexPath indexPathForItem:i inSection:0]];
+//            }
+//        }
+//    }
+//
+//    // 刷新所有需要更新的 cell
+//    [self.collectionView reloadItemsAtIndexPaths:indexPathsToReload];
+}
+
+#pragma mark - Public Methods
+
+// C++ updateVO 调用这个函数刷新数据
+- (void)updateSelectedMediaList:(NSMutableArray<MediaInfo *> *)selectedList {
+    if (!selectedList) {
+        self.selectedMediaList = [NSMutableArray array];
     } else {
-        // 未选中，添加到选中列表
-        MediaInfo *mediaInfo = [self createMediaInfoFromAsset:asset];
-        [self.selectedMediaList addObject:mediaInfo];
+        self.selectedMediaList = selectedList;
     }
 
-    // 需要刷新的indexPath列表
-    NSMutableArray<NSIndexPath *> *indexPathsToReload = [NSMutableArray arrayWithObject:indexPath];
+    // 刷新整个 collectionView 以更新所有选中状态和序号
+    [self.collectionView reloadData];
+}
 
-    // 如果是取消选中操作，需要刷新所有已选中的item以更新序号
-    if (existingInfo) {
-        for (NSInteger i = 0; i < self.mediaAssets.count; i++) {
-            PHAsset *asset = self.mediaAssets[i];
-            if ([self isMediaSelected:asset.localIdentifier] && i != indexPath.item) {
-                [indexPathsToReload addObject:[NSIndexPath indexPathForItem:i inSection:0]];
-            }
+- (void)exportSelectedMediaWithCompletion:(void(^)(NSArray<MediaInfo *> *mediaList, NSError *error))completion {
+    if (!completion) return;
+
+    if (self.selectedMediaList.count == 0) {
+        completion(@[], nil);
+        return;
+    }
+
+    // 创建导出目录
+    NSString *documentsPath = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
+    NSString *exportPath = [documentsPath stringByAppendingPathComponent:@"ExportedMedia"];
+
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    if (![fileManager fileExistsAtPath:exportPath]) {
+        [fileManager createDirectoryAtPath:exportPath withIntermediateDirectories:YES attributes:nil error:nil];
+    }
+
+    dispatch_group_t group = dispatch_group_create();
+    __block NSError *exportError = nil;
+
+    for (NSInteger i = 0; i < self.selectedMediaList.count; i++) {
+        MediaInfo *mediaInfo = self.selectedMediaList[i];
+
+        // 根据 identifier 找到对应的 PHAsset
+        PHFetchResult<PHAsset *> *result = [PHAsset fetchAssetsWithLocalIdentifiers:@[mediaInfo.identifier] options:nil];
+        if (result.count == 0) continue;
+
+        PHAsset *asset = result.firstObject;
+
+        // 使用 identifier 生成文件名，替换特殊字符为下划线
+        NSString *safeIdentifier = [mediaInfo.identifier stringByReplacingOccurrencesOfString:@"/" withString:@"_"];
+        safeIdentifier = [safeIdentifier stringByReplacingOccurrencesOfString:@"-" withString:@"_"];
+        NSString *fileName;
+
+        if (mediaInfo.isVideo) {
+            // 导出视频 - 使用原视频
+            fileName = [NSString stringWithFormat:@"%@.mp4", safeIdentifier];
+            NSString *filePath = [exportPath stringByAppendingPathComponent:fileName];
+
+            dispatch_group_enter(group);
+
+            PHVideoRequestOptions *options = [[PHVideoRequestOptions alloc] init];
+            options.version = PHVideoRequestOptionsVersionOriginal;
+            options.deliveryMode = PHVideoRequestOptionsDeliveryModeFastFormat;
+            options.networkAccessAllowed = YES;
+
+            [[PHImageManager defaultManager] requestAVAssetForVideo:asset options:options resultHandler:^(AVAsset *avAsset, AVAudioMix *audioMix, NSDictionary *info) {
+                if ([avAsset isKindOfClass:[AVURLAsset class]]) {
+                    AVURLAsset *urlAsset = (AVURLAsset *)avAsset;
+                    NSError *error = nil;
+
+                    // 删除已存在的文件
+                    if ([[NSFileManager defaultManager] fileExistsAtPath:filePath]) {
+                        [[NSFileManager defaultManager] removeItemAtPath:filePath error:nil];
+                    }
+
+                    // 拷贝视频文件
+                    if ([[NSFileManager defaultManager] copyItemAtURL:urlAsset.URL toURL:[NSURL fileURLWithPath:filePath] error:&error]) {
+                        // 保存路径到 MediaInfo
+                        mediaInfo.videoPath = filePath;
+                    } else {
+                        exportError = error;
+                    }
+                }
+                dispatch_group_leave(group);
+            }];
+
+        } else {
+            // 导出图片 - 使用 FastFormat
+            fileName = [NSString stringWithFormat:@"%@.jpg", safeIdentifier];
+            NSString *filePath = [exportPath stringByAppendingPathComponent:fileName];
+
+            dispatch_group_enter(group);
+
+            PHImageRequestOptions *options = [[PHImageRequestOptions alloc] init];
+            options.deliveryMode = PHImageRequestOptionsDeliveryModeFastFormat;
+            options.networkAccessAllowed = YES;
+
+            [[PHImageManager defaultManager] requestImageDataForAsset:asset options:options resultHandler:^(NSData *imageData, NSString *dataUTI, UIImageOrientation orientation, NSDictionary *info) {
+                if (imageData) {
+                    NSError *error = nil;
+                    if ([imageData writeToFile:filePath options:NSDataWritingAtomic error:&error]) {
+                        // 保存路径到 MediaInfo
+                        mediaInfo.imagePath = filePath;
+                    } else {
+                        exportError = error;
+                    }
+                }
+                dispatch_group_leave(group);
+            }];
         }
     }
 
-    // 刷新所有需要更新的 cell
-    [self.collectionView reloadItemsAtIndexPaths:indexPathsToReload];
+    // 所有导出任务完成后回调
+    dispatch_group_notify(group, dispatch_get_main_queue(), ^{
+        completion([self.selectedMediaList copy], exportError);
+    });
 }
 
 
