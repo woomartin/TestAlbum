@@ -8,12 +8,27 @@
 #import "ViewController.h"
 #import <Photos/Photos.h>
 
+// 媒体信息模型
+@interface MediaInfo : NSObject
+
+@property (nonatomic, copy) NSString *identifier;
+@property (nonatomic, assign) BOOL isVideo;
+@property (nonatomic, assign) NSTimeInterval duration;
+@property (nonatomic, assign) NSInteger width;
+@property (nonatomic, assign) NSInteger height;
+@property (nonatomic, assign) long long size;
+
+@end
+
+@implementation MediaInfo
+@end
+
 @interface ViewController () <UICollectionViewDelegate, UICollectionViewDataSource>
 
 @property (nonatomic, strong) UICollectionView *collectionView;
 @property (nonatomic, strong) NSArray<PHAsset *> *mediaAssets;
 @property (nonatomic, strong) PHCachingImageManager *imageManager;
-@property (nonatomic, strong) NSMutableSet<NSString *> *selectedIdentifiers;
+@property (nonatomic, strong) NSMutableArray<MediaInfo *> *selectedMediaList;
 
 @end
 
@@ -23,7 +38,7 @@
     [super viewDidLoad];
 
     self.imageManager = [[PHCachingImageManager alloc] init];
-    self.selectedIdentifiers = [NSMutableSet set];
+    self.selectedMediaList = [NSMutableArray array];
 
     [self setupCollectionView];
     [self requestPhotoLibraryAccess];
@@ -32,9 +47,10 @@
 - (void)setupCollectionView {
     UICollectionViewFlowLayout *layout = [[UICollectionViewFlowLayout alloc] init];
     layout.scrollDirection = UICollectionViewScrollDirectionHorizontal;
-    layout.itemSize = CGSizeMake(30, 86);
+    layout.itemSize = CGSizeMake(40, 86);
     layout.minimumInteritemSpacing = 5;
     layout.minimumLineSpacing = 5;
+    layout.sectionInset = UIEdgeInsetsMake(0, 5, 0, 5);
 
     self.collectionView = [[UICollectionView alloc] initWithFrame:CGRectMake(0, 100, self.view.bounds.size.width, 86) collectionViewLayout:layout];
     self.collectionView.backgroundColor = [UIColor whiteColor];
@@ -79,6 +95,36 @@
     [self.collectionView reloadData];
 }
 
+#pragma mark - Helper Methods
+
+- (MediaInfo *)createMediaInfoFromAsset:(PHAsset *)asset {
+    MediaInfo *info = [[MediaInfo alloc] init];
+    info.identifier = asset.localIdentifier;
+    info.isVideo = (asset.mediaType == PHAssetMediaTypeVideo);
+    info.duration = asset.duration;
+    info.width = asset.pixelWidth;
+    info.height = asset.pixelHeight;
+
+    // 获取文件大小
+    PHAssetResource *resource = [[PHAssetResource assetResourcesForAsset:asset] firstObject];
+    info.size = [[resource valueForKey:@"fileSize"] longLongValue];
+
+    return info;
+}
+
+- (MediaInfo *)findMediaInfoByIdentifier:(NSString *)identifier {
+    for (MediaInfo *info in self.selectedMediaList) {
+        if ([info.identifier isEqualToString:identifier]) {
+            return info;
+        }
+    }
+    return nil;
+}
+
+- (BOOL)isMediaSelected:(NSString *)identifier {
+    return [self findMediaInfoByIdentifier:identifier] != nil;
+}
+
 #pragma mark - UICollectionViewDataSource
 
 - (NSInteger)collectionView:(UICollectionView *)collectionView numberOfItemsInSection:(NSInteger)section {
@@ -102,7 +148,7 @@
 
     // 请求缩略图
     [self.imageManager requestImageForAsset:asset
-                                 targetSize:CGSizeMake(30 * [UIScreen mainScreen].scale, 86 * [UIScreen mainScreen].scale)
+                                 targetSize:CGSizeMake(40 * [UIScreen mainScreen].scale, 86 * [UIScreen mainScreen].scale)
                                 contentMode:PHImageContentModeAspectFill
                                     options:nil
                               resultHandler:^(UIImage *result, NSDictionary *info) {
@@ -111,8 +157,12 @@
 
     // 如果是视频，添加播放图标和时长信息
     if (asset.mediaType == PHAssetMediaTypeVideo) {
+        // 底部对齐的基准位置
+        CGFloat bottomY = 86 - 2;  // 距离底边2点
+        CGFloat elementHeight = 12;  // 统一高度
+
         // 播放图标在左下方
-        UIImageView *playIcon = [[UIImageView alloc] initWithFrame:CGRectMake(5, 86 - 20 - 5, 20, 20)];
+        UIImageView *playIcon = [[UIImageView alloc] initWithFrame:CGRectMake(3, bottomY - elementHeight, 12, 12)];
         playIcon.image = [UIImage systemImageNamed:@"play.circle.fill"];
         playIcon.tintColor = [UIColor whiteColor];
         [cell.contentView addSubview:playIcon];
@@ -123,27 +173,43 @@
         NSInteger seconds = (NSInteger)duration % 60;
         NSString *durationString = [NSString stringWithFormat:@"%02ld:%02ld", (long)minutes, (long)seconds];
 
-        UILabel *durationLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 86 - 18 - 3, 30, 18)];
+        UILabel *durationLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, bottomY - elementHeight, 40 - 15, elementHeight)];
         durationLabel.text = durationString;
         durationLabel.textColor = [UIColor whiteColor];
-        durationLabel.font = [UIFont systemFontOfSize:10];
+        durationLabel.font = [UIFont systemFontOfSize:9];
         durationLabel.textAlignment = NSTextAlignmentRight;
         [cell.contentView addSubview:durationLabel];
     }
 
-    // 添加选中按钮到右上方
-    UIImageView *selectIcon = [[UIImageView alloc] initWithFrame:CGRectMake(30 - 20 - 3, 3, 20, 20)];
-    BOOL isSelected = [self.selectedIdentifiers containsObject:asset.localIdentifier];
+    // 添加选中标识到右上方
+    MediaInfo *selectedInfo = [self findMediaInfoByIdentifier:asset.localIdentifier];
 
-    if (isSelected) {
-        selectIcon.image = [UIImage systemImageNamed:@"checkmark.circle.fill"];
-        selectIcon.tintColor = [UIColor systemBlueColor];
+    if (selectedInfo) {
+        // 已选中，显示序号
+        NSInteger selectedIndex = [self.selectedMediaList indexOfObject:selectedInfo];
+        NSInteger orderNumber = selectedIndex + 1;
+
+        // 创建圆形背景
+        UIView *circleView = [[UIView alloc] initWithFrame:CGRectMake(40 - 20 - 3, 3, 20, 20)];
+        circleView.backgroundColor = [UIColor systemBlueColor];
+        circleView.layer.cornerRadius = 10;
+        circleView.clipsToBounds = YES;
+        [cell.contentView addSubview:circleView];
+
+        // 创建序号标签
+        UILabel *numberLabel = [[UILabel alloc] initWithFrame:circleView.bounds];
+        numberLabel.text = [NSString stringWithFormat:@"%ld", (long)orderNumber];
+        numberLabel.textColor = [UIColor whiteColor];
+        numberLabel.font = [UIFont boldSystemFontOfSize:12];
+        numberLabel.textAlignment = NSTextAlignmentCenter;
+        [circleView addSubview:numberLabel];
     } else {
+        // 未选中，显示空心圆圈
+        UIImageView *selectIcon = [[UIImageView alloc] initWithFrame:CGRectMake(40 - 20 - 3, 3, 20, 20)];
         selectIcon.image = [UIImage systemImageNamed:@"circle"];
         selectIcon.tintColor = [UIColor whiteColor];
+        [cell.contentView addSubview:selectIcon];
     }
-
-    [cell.contentView addSubview:selectIcon];
 
     return cell;
 }
@@ -154,10 +220,15 @@
     PHAsset *asset = self.mediaAssets[indexPath.item];
     NSString *identifier = asset.localIdentifier;
 
-    if ([self.selectedIdentifiers containsObject:identifier]) {
-        [self.selectedIdentifiers removeObject:identifier];
+    MediaInfo *existingInfo = [self findMediaInfoByIdentifier:identifier];
+
+    if (existingInfo) {
+        // 已选中，取消选中
+        [self.selectedMediaList removeObject:existingInfo];
     } else {
-        [self.selectedIdentifiers addObject:identifier];
+        // 未选中，添加到选中列表
+        MediaInfo *mediaInfo = [self createMediaInfoFromAsset:asset];
+        [self.selectedMediaList addObject:mediaInfo];
     }
 
     // 刷新对应的 cell
