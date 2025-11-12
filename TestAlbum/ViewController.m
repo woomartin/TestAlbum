@@ -231,8 +231,21 @@
         [self.selectedMediaList addObject:mediaInfo];
     }
 
-    // 刷新对应的 cell
-    [self.collectionView reloadItemsAtIndexPaths:@[indexPath]];
+    // 需要刷新的indexPath列表
+    NSMutableArray<NSIndexPath *> *indexPathsToReload = [NSMutableArray arrayWithObject:indexPath];
+
+    // 如果是取消选中操作，需要刷新所有已选中的item以更新序号
+    if (existingInfo) {
+        for (NSInteger i = 0; i < self.mediaAssets.count; i++) {
+            PHAsset *asset = self.mediaAssets[i];
+            if ([self isMediaSelected:asset.localIdentifier] && i != indexPath.item) {
+                [indexPathsToReload addObject:[NSIndexPath indexPathForItem:i inSection:0]];
+            }
+        }
+    }
+
+    // 刷新所有需要更新的 cell
+    [self.collectionView reloadItemsAtIndexPaths:indexPathsToReload];
 }
 
 
