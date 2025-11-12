@@ -109,36 +109,49 @@
         imageView.image = result;
     }];
 
-    // 如果是视频，添加一个播放图标标识到左下方
+    // 如果是视频，添加播放图标和时长信息
     if (asset.mediaType == PHAssetMediaTypeVideo) {
+        // 播放图标在左下方
         UIImageView *playIcon = [[UIImageView alloc] initWithFrame:CGRectMake(5, 86 - 20 - 5, 20, 20)];
         playIcon.image = [UIImage systemImageNamed:@"play.circle.fill"];
         playIcon.tintColor = [UIColor whiteColor];
         [cell.contentView addSubview:playIcon];
+
+        // 视频时长在右下方
+        NSTimeInterval duration = asset.duration;
+        NSInteger minutes = (NSInteger)duration / 60;
+        NSInteger seconds = (NSInteger)duration % 60;
+        NSString *durationString = [NSString stringWithFormat:@"%02ld:%02ld", (long)minutes, (long)seconds];
+
+        UILabel *durationLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 86 - 18 - 3, 30, 18)];
+        durationLabel.text = durationString;
+        durationLabel.textColor = [UIColor whiteColor];
+        durationLabel.font = [UIFont systemFontOfSize:10];
+        durationLabel.textAlignment = NSTextAlignmentRight;
+        [cell.contentView addSubview:durationLabel];
     }
 
     // 添加选中按钮到右上方
-    UIButton *selectButton = [[UIButton alloc] initWithFrame:CGRectMake(30 - 20 - 3, 3, 20, 20)];
-    selectButton.tag = indexPath.item;
+    UIImageView *selectIcon = [[UIImageView alloc] initWithFrame:CGRectMake(30 - 20 - 3, 3, 20, 20)];
     BOOL isSelected = [self.selectedIdentifiers containsObject:asset.localIdentifier];
 
     if (isSelected) {
-        [selectButton setImage:[UIImage systemImageNamed:@"checkmark.circle.fill"] forState:UIControlStateNormal];
-        selectButton.tintColor = [UIColor systemBlueColor];
+        selectIcon.image = [UIImage systemImageNamed:@"checkmark.circle.fill"];
+        selectIcon.tintColor = [UIColor systemBlueColor];
     } else {
-        [selectButton setImage:[UIImage systemImageNamed:@"circle"] forState:UIControlStateNormal];
-        selectButton.tintColor = [UIColor whiteColor];
+        selectIcon.image = [UIImage systemImageNamed:@"circle"];
+        selectIcon.tintColor = [UIColor whiteColor];
     }
 
-    [selectButton addTarget:self action:@selector(selectButtonTapped:) forControlEvents:UIControlEventTouchUpInside];
-    [cell.contentView addSubview:selectButton];
+    [cell.contentView addSubview:selectIcon];
 
     return cell;
 }
 
-- (void)selectButtonTapped:(UIButton *)sender {
-    NSInteger index = sender.tag;
-    PHAsset *asset = self.mediaAssets[index];
+#pragma mark - UICollectionViewDelegate
+
+- (void)collectionView:(UICollectionView *)collectionView didSelectItemAtIndexPath:(NSIndexPath *)indexPath {
+    PHAsset *asset = self.mediaAssets[indexPath.item];
     NSString *identifier = asset.localIdentifier;
 
     if ([self.selectedIdentifiers containsObject:identifier]) {
@@ -148,7 +161,7 @@
     }
 
     // 刷新对应的 cell
-    [self.collectionView reloadItemsAtIndexPaths:@[[NSIndexPath indexPathForItem:index inSection:0]]];
+    [self.collectionView reloadItemsAtIndexPaths:@[indexPath]];
 }
 
 
