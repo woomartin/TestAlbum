@@ -32,7 +32,6 @@
 @property (nonatomic, strong) NSArray<PHAsset *> *mediaAssets;
 @property (nonatomic, strong) PHCachingImageManager *imageManager;
 @property (nonatomic, strong) NSMutableArray<MediaInfo *> *selectedMediaList;
-@property (nonatomic, strong) UIButton *exportButton;
 
 @end
 
@@ -45,7 +44,6 @@
     self.selectedMediaList = [NSMutableArray array];
 
     [self setupCollectionView];
-    [self setupExportButton];
     [self requestPhotoLibraryAccess];
 }
 
@@ -65,19 +63,6 @@
     [self.collectionView registerClass:[UICollectionViewCell class] forCellWithReuseIdentifier:@"MediaCell"];
 
     [self.view addSubview:self.collectionView];
-}
-
-- (void)setupExportButton {
-    self.exportButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    self.exportButton.frame = CGRectMake(20, 200, self.view.bounds.size.width - 40, 50);
-    [self.exportButton setTitle:@"导出选中媒体" forState:UIControlStateNormal];
-    self.exportButton.backgroundColor = [UIColor systemBlueColor];
-    [self.exportButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    self.exportButton.titleLabel.font = [UIFont boldSystemFontOfSize:16];
-    self.exportButton.layer.cornerRadius = 8;
-    [self.exportButton addTarget:self action:@selector(exportButtonTapped) forControlEvents:UIControlEventTouchUpInside];
-
-    [self.view addSubview:self.exportButton];
 }
 
 - (void)requestPhotoLibraryAccess {
@@ -111,64 +96,6 @@
 
     self.mediaAssets = [assets copy];
     [self.collectionView reloadData];
-}
-
-#pragma mark - Helper Methods
-
-- (void)exportButtonTapped {
-    if (self.selectedMediaList.count == 0) {
-        NSLog(@"没有选中任何媒体");
-        return;
-    }
-
-    NSLog(@"开始导出 %ld 个媒体...", (long)self.selectedMediaList.count);
-
-    [self exportSelectedMediaList:self.selectedMediaList completion:^(NSArray<MediaInfo *> *mediaList) {
-
-        NSLog(@"导出成功！共导出 %ld 个文件", (long)mediaList.count);
-        NSLog(@"========== 导出数据详情 ==========");
-
-        for (NSInteger i = 0; i < mediaList.count; i++) {
-            MediaInfo *info = mediaList[i];
-            NSLog(@"\n[%ld] 媒体信息:", (long)(i + 1));
-            NSLog(@"  类型: %@", info.isVideo ? @"视频" : @"图片");
-            NSLog(@"  Identifier: %@", info.identifier);
-            NSLog(@"  尺寸: %ldx%ld", (long)info.width, (long)info.height);
-            NSLog(@"  文件大小: %.2f MB", info.size / 1024.0 / 1024.0);
-
-            if (info.isVideo) {
-                NSLog(@"  时长: %.2f 秒", info.duration);
-                NSLog(@"  视频路径: %@", info.videoPath);
-                NSLog(@"  封面路径: %@", info.imagePath);
-            } else {
-                NSLog(@"  图片路径: %@", info.imagePath);
-            }
-        }
-
-        NSLog(@"\n========== 导出完成 ==========");
-    }];
-}
-
-// 导出图片数据到文件的辅助方法
-- (void)exportImageDataForAsset:(PHAsset *)asset
-                      toPath:(NSString *)filePath
-                 completion:(void(^)(NSString *path, NSError *error))completion {
-    PHImageRequestOptions *options = [[PHImageRequestOptions alloc] init];
-    options.deliveryMode = PHImageRequestOptionsDeliveryModeFastFormat;
-    options.networkAccessAllowed = YES;
-
-    [[PHImageManager defaultManager] requestImageDataForAsset:asset options:options resultHandler:^(NSData *imageData, NSString *dataUTI, UIImageOrientation orientation, NSDictionary *info) {
-        if (imageData) {
-            NSError *error = nil;
-            if ([imageData writeToFile:filePath options:NSDataWritingAtomic error:&error]) {
-                completion(filePath, nil);
-            } else {
-                completion(nil, error);
-            }
-        } else {
-            completion(nil, nil);
-        }
-    }];
 }
 
 - (MediaInfo *)createMediaInfoFromAsset:(PHAsset *)asset {
@@ -296,36 +223,37 @@
 
     MediaInfo *existingInfo = [self findMediaInfoByIdentifier:identifier];
 
-    // sendEvent到C++层
-    if (existingInfo) {
-        // 已选中，取消选中
-        [self.selectedMediaList removeObject:existingInfo];
-    } else {
-        // 未选中，添加到选中列表
-        MediaInfo *mediaInfo = [self createMediaInfoFromAsset:asset];
-        [self.selectedMediaList addObject:mediaInfo];
-    }
-
-    // 需要刷新的indexPath列表
-    NSMutableArray<NSIndexPath *> *indexPathsToReload = [NSMutableArray arrayWithObject:indexPath];
-
-    // 如果是取消选中操作，需要刷新所有已选中的item以更新序号
-    if (existingInfo) {
-        for (NSInteger i = 0; i < self.mediaAssets.count; i++) {
-            PHAsset *asset = self.mediaAssets[i];
-            if ([self isMediaSelected:asset.localIdentifier] && i != indexPath.item) {
-                [indexPathsToReload addObject:[NSIndexPath indexPathForItem:i inSection:0]];
-            }
-        }
-    }
-
-    // 刷新所有需要更新的 cell
-    [self.collectionView reloadItemsAtIndexPaths:indexPathsToReload];
+    // TODO sendEvent到C++层 携带数据existingInfo
+    
+//    if (existingInfo) {
+//        // 已选中，取消选中
+//        [self.selectedMediaList removeObject:existingInfo];
+//    } else {
+//        // 未选中，添加到选中列表
+//        MediaInfo *mediaInfo = [self createMediaInfoFromAsset:asset];
+//        [self.selectedMediaList addObject:mediaInfo];
+//    }
+//
+//    // 需要刷新的indexPath列表
+//    NSMutableArray<NSIndexPath *> *indexPathsToReload = [NSMutableArray arrayWithObject:indexPath];
+//
+//    // 如果是取消选中操作，需要刷新所有已选中的item以更新序号
+//    if (existingInfo) {
+//        for (NSInteger i = 0; i < self.mediaAssets.count; i++) {
+//            PHAsset *asset = self.mediaAssets[i];
+//            if ([self isMediaSelected:asset.localIdentifier] && i != indexPath.item) {
+//                [indexPathsToReload addObject:[NSIndexPath indexPathForItem:i inSection:0]];
+//            }
+//        }
+//    }
+//
+//    // 刷新所有需要更新的 cell
+//    [self.collectionView reloadItemsAtIndexPaths:indexPathsToReload];
 }
 
 #pragma mark - Public Methods
 
-// C++ updateVO 调用这个函数刷新数据
+// TODO C++ updateVO 调用这个函数刷新数据
 - (void)updateSelectedMediaList:(NSMutableArray<MediaInfo *> *)selectedList {
     if (!selectedList) {
         self.selectedMediaList = [NSMutableArray array];
@@ -333,7 +261,7 @@
         self.selectedMediaList = selectedList;
     }
 
-    // 刷新整个 collectionView 以更新所有选中状态和序号
+    // 刷新整个 collectionView 以更新所有选中状态和序号 
     [self.collectionView reloadData];
 }
 
@@ -427,7 +355,7 @@
 
     // 所有导出任务完成后回调
     dispatch_group_notify(group, dispatch_get_main_queue(), ^{
-        completion([selectedList copy]);
+        completion(selectedList);
     });
 }
 
