@@ -36,34 +36,6 @@
     self.contentContainerView.layer.masksToBounds = YES;
     [self.view addSubview:self.contentContainerView];
 
-    // 添加导航栏（因为不再使用系统导航栏）
-    UIView *navBar = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.view.bounds.size.width, 88)];
-    navBar.backgroundColor = [UIColor whiteColor];
-    [self.contentContainerView addSubview:navBar];
-
-    // 添加标题
-    UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 44, self.view.bounds.size.width, 44)];
-    titleLabel.text = @"TestController";
-    titleLabel.textAlignment = NSTextAlignmentCenter;
-    titleLabel.font = [UIFont boldSystemFontOfSize:17];
-    [navBar addSubview:titleLabel];
-
-    // 添加返回按钮
-    UIButton *backButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    backButton.frame = CGRectMake(0, 44, 80, 44);
-    [backButton setTitle:@"< 返回" forState:UIControlStateNormal];
-    [backButton addTarget:self action:@selector(onBackButtonTapped) forControlEvents:UIControlEventTouchUpInside];
-    [navBar addSubview:backButton];
-
-    // 添加提示标签到内容容器
-    UILabel *hintLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 160, self.contentContainerView.bounds.size.width - 40, 60)];
-    hintLabel.text = @"向下滑动可以关闭页面\n支持整体缩小移动效果";
-    hintLabel.textAlignment = NSTextAlignmentCenter;
-    hintLabel.font = [UIFont systemFontOfSize:16];
-    hintLabel.textColor = [UIColor grayColor];
-    hintLabel.numberOfLines = 2;
-    [self.contentContainerView addSubview:hintLabel];
-
     // 设置下拉手势
     [self setupPanGesture];
 }
