@@ -8,6 +8,7 @@
 #import "ViewController.h"
 #import <Photos/Photos.h>
 #import <AVFoundation/AVFoundation.h>
+#import "TestController.h"
 
 // 媒体信息模型
 @interface MediaInfo : NSObject
@@ -32,6 +33,7 @@
 @property (nonatomic, strong) NSArray<PHAsset *> *mediaAssets;
 @property (nonatomic, strong) PHCachingImageManager *imageManager;
 @property (nonatomic, strong) NSMutableArray<MediaInfo *> *selectedMediaList;
+@property (nonatomic, strong) UIButton *bottomButton;
 
 @end
 
@@ -44,6 +46,7 @@
     self.selectedMediaList = [NSMutableArray array];
 
     [self setupCollectionView];
+    [self setupBottomButton];
     [self requestPhotoLibraryAccess];
 }
 
@@ -63,6 +66,28 @@
     [self.collectionView registerClass:[UICollectionViewCell class] forCellWithReuseIdentifier:@"MediaCell"];
 
     [self.view addSubview:self.collectionView];
+}
+
+- (void)setupBottomButton {
+    CGFloat buttonWidth = self.view.bounds.size.width - 40;
+    CGFloat buttonHeight = 50;
+    CGFloat buttonY = self.view.bounds.size.height - buttonHeight - 50;
+
+    self.bottomButton = [[UIButton alloc] initWithFrame:CGRectMake(20, buttonY, buttonWidth, buttonHeight)];
+    [self.bottomButton setTitle:@"打开测试页面" forState:UIControlStateNormal];
+    [self.bottomButton setBackgroundColor:[UIColor systemBlueColor]];
+    [self.bottomButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    self.bottomButton.layer.cornerRadius = 8;
+    self.bottomButton.clipsToBounds = YES;
+    [self.bottomButton addTarget:self action:@selector(onBottomButtonTapped) forControlEvents:UIControlEventTouchUpInside];
+
+    [self.view addSubview:self.bottomButton];
+}
+
+- (void)onBottomButtonTapped {
+    TestController *testController = [[TestController alloc] init];
+    testController.modalPresentationStyle = UIModalPresentationOverFullScreen;
+    [self presentViewController:testController animated:NO completion:nil];
 }
 
 - (void)requestPhotoLibraryAccess {
