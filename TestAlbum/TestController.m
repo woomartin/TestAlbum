@@ -157,8 +157,18 @@
         CGPoint velocity = [panGesture velocityInView:self.view];
 
         // 只在垂直方向滑动且向下滑动时触发
-        return fabs(velocity.y) > fabs(velocity.x) && velocity.y > 0;
+        if (!(fabs(velocity.y) > fabs(velocity.x) && velocity.y > 0)) {
+            return NO;
+        }
+
+        return YES;
     }
+    return YES;
+}
+
+// 允许与其他手势同时识别
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer
+    shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
     return YES;
 }
 
